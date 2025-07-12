@@ -221,7 +221,8 @@ def setup_custom_domain():
                     st.success(f"✅ Custom domain setup: {custom_url}")
             
     except Exception as e:
-
+        # Tidak masalah jika custom domain gagal
+        pass
 def generate_worker_script():
     """Generate worker script dengan posts dari session state"""
     posts_json = json.dumps(st.session_state.posts, indent=2)
