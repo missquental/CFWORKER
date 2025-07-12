@@ -62,7 +62,25 @@ def init_session_state():
     if 'worker_subdomain' not in st.session_state:
         st.session_state.worker_subdomain = ""
 
+def get_account_name(account_id, api_token):
+    """Get account name from Cloudflare API"""
+    try:
+        headers = {
+            "Authorization": f"Bearer {api_token}",
+            "Content-Type": "application/json"
+        }
+        response = requests.get(f"https://api.cloudflare.com/client/v4/accounts/{account_id}", headers=headers)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('success'):
+                return data['result']['name']
+        return None
+    except Exception as e:
+        st.error(f"Error getting account name: {str(e)}")
+        return None
 
+def authenticate():
     """Authentication form"""
     st.markdown('<div class="main-header"><h1>🚀 Blog Management System</h1><p>Kelola blog Cloudflare Worker Anda dengan mudah</p></div>', unsafe_allow_html=True)
     
@@ -92,16 +110,22 @@ def init_session_state():
         
         if submit:
             if account_id and api_token and subdomain:
-                account_name = get_account_name(account_id, api_token)
-                if account_name:
-                    full_subdomain = f"{subdomain}.{account_name.replace(' ', '').lower()}"
-                    st.session_state.cf_account_id = account_id
-                    st.session_state.cf_api_token = api_token
-                    st.session_state.worker_subdomain = full_subdomain
-                    st.session_state.authenticated = True
-                    st.rerun()
+                # Test connection first
+                if test_cloudflare_connection(account_id, api_token):
+                    account_name = get_account_name(account_id, api_token)
+                    if account_name:
+                        # Use simple subdomain format
+                        full_subdomain = f"{subdomain}-{account_name.replace(' ', '').lower()}"
+                        st.session_state.cf_account_id = account_id
+                        st.session_state.cf_api_token = api_token
+                        st.session_state.worker_subdomain = full_subdomain
+                        st.session_state.authenticated = True
+                        st.success("✅ Koneksi berhasil!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Gagal mengambil nama akun. Periksa API Token dan Account ID.")
                 else:
-                    st.error("❌ Gagal mengambil nama akun. Periksa API Token dan Account ID.")
+                    st.error("❌ Gagal terhubung ke Cloudflare. Periksa credentials Anda.")
             else:
                 st.error("❌ Semua field harus diisi!")
 
@@ -164,7 +188,7 @@ const HTML_TEMPLATE = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{title}}</title>
+    <title>{{{{title}}}}</title>
     <style>
         * {{
             margin: 0;
@@ -264,7 +288,7 @@ const HTML_TEMPLATE = `
 </head>
 <body>
     <div class="container">
-        {{content}}
+        {{{{content}}}}
     </div>
 </body>
 </html>
@@ -308,14 +332,14 @@ function getHomePage() {{
     ${{postsHtml}}
   `;
 
-  return HTML_TEMPLATE.replace('{{title}}', 'Blog Saya').replace('{{content}}', content);
+  return HTML_TEMPLATE.replace('{{{{title}}}}', 'Blog Saya').replace('{{{{content}}}}', content);
 }}
 
 function getPostPage(postId) {{
   const post = posts.find(p => p.id === postId);
   
   if (!post) {{
-    return HTML_TEMPLATE.replace('{{title}}', '404 Not Found').replace('{{content}}', `
+    return HTML_TEMPLATE.replace('{{{{title}}}}', '404 Not Found').replace('{{{{content}}}}', `
       <header>
         <h1 class="blog-title">404</h1>
         <p class="blog-subtitle">Post tidak ditemukan</p>
@@ -337,7 +361,7 @@ function getPostPage(postId) {{
     </div>
   `;
 
-  return HTML_TEMPLATE.replace('{{title}}', post.title).replace('{{content}}', content);
+  return HTML_TEMPLATE.replace('{{{{title}}}}', post.title).replace('{{{{content}}}}', content);
 }}
 """
 
