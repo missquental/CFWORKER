@@ -61,23 +61,26 @@ def init_session_state():
         st.session_state.cf_api_token = ""
     if 'worker_subdomain' not in st.session_state:
         st.session_state.worker_subdomain = ""
+    if 'worker_name' not in st.session_state:
+        st.session_state.worker_name = ""
+    if 'account_name' not in st.session_state:
+        st.session_state.account_name = ""
 
 def get_account_name(account_id, api_token):
-    """Get account name from Cloudflare API"""
+    """Ambil nama akun berdasarkan account_id"""
     try:
         headers = {
             "Authorization": f"Bearer {api_token}",
             "Content-Type": "application/json"
         }
-        response = requests.get(f"https://api.cloudflare.com/client/v4/accounts/{account_id}", headers=headers)
-        
+        response = requests.get("https://api.cloudflare.com/client/v4/accounts", headers=headers)
         if response.status_code == 200:
-            data = response.json()
-            if data.get('success'):
-                return data['result']['name']
+            accounts = response.json().get("result", [])
+            for acc in accounts:
+                if acc["id"] == account_id:
+                    return acc["name"]
         return None
     except Exception as e:
-        st.error(f"Error getting account name: {str(e)}")
         return None
 
 def authenticate():
@@ -110,17 +113,21 @@ def authenticate():
         
         if submit:
             if account_id and api_token and subdomain:
-                # Test connection first
                 if test_cloudflare_connection(account_id, api_token):
                     account_name = get_account_name(account_id, api_token)
                     if account_name:
-                        # Use simple subdomain format
-                        full_subdomain = f"{subdomain}-{account_name.replace(' ', '').lower()}"
+                        # Format: <WORKER_NAME>.<ACCOUNT_NAME>.workers.dev
+                        worker_name = subdomain
+                        account_subdomain = account_name.replace(' ', '').replace('-', '').lower()
+                        full_worker_url = f"{worker_name}.{account_subdomain}.workers.dev"
+                        
                         st.session_state.cf_account_id = account_id
                         st.session_state.cf_api_token = api_token
-                        st.session_state.worker_subdomain = full_subdomain
+                        st.session_state.worker_name = worker_name
+                        st.session_state.worker_subdomain = full_worker_url
+                        st.session_state.account_name = account_name
                         st.session_state.authenticated = True
-                        st.success("✅ Koneksi berhasil!")
+                        st.success(f"✅ Koneksi berhasil! Worker akan di-deploy ke: {full_worker_url}")
                         st.rerun()
                     else:
                         st.error("❌ Gagal mengambil nama akun. Periksa API Token dan Account ID.")
@@ -149,13 +156,14 @@ def deploy_worker(script_content):
             "Content-Type": "application/javascript"
         }
         
-        url = f"https://api.cloudflare.com/client/v4/accounts/{st.session_state.cf_account_id}/workers/scripts/{st.session_state.worker_subdomain}"
+        # Deploy worker dengan nama yang benar
+        url = f"https://api.cloudflare.com/client/v4/accounts/{st.session_state.cf_account_id}/workers/scripts/{st.session_state.worker_name}"
         
         response = requests.put(url, headers=headers, data=script_content)
         
         if response.status_code == 200:
-            # Deploy ke subdomain
-            subdomain_url = f"https://api.cloudflare.com/client/v4/accounts/{st.session_state.cf_account_id}/workers/scripts/{st.session_state.worker_subdomain}/subdomain"
+            # Enable subdomain untuk worker
+            subdomain_url = f"https://api.cloudflare.com/client/v4/accounts/{st.session_state.cf_account_id}/workers/scripts/{st.session_state.worker_name}/subdomain"
             subdomain_data = {"enabled": True}
             
             subdomain_headers = {
@@ -375,7 +383,9 @@ def main_dashboard():
         page = st.selectbox("Pilih Halaman:", ["📋 Kelola Post", "🚀 Deploy", "⚙️ Settings"])
         
         st.markdown("---")
-        st.markdown(f"**Worker URL:**  \n`{st.session_state.worker_subdomain}.workers.dev`")
+        st.markdown(f"**Worker URL:**  \n`https://{st.session_state.worker_subdomain}`")
+        st.markdown(f"**Account:** {st.session_state.account_name}")
+        st.markdown(f"**Worker Name:** {st.session_state.worker_name}")
         
         if st.button("🔓 Logout"):
             st.session_state.authenticated = False
@@ -450,7 +460,7 @@ def deploy_page():
     """Halaman untuk deploy worker"""
     st.header("🚀 Deploy Blog")
     
-    st.info(f"Worker akan di-deploy ke: **{st.session_state.worker_subdomain}.workers.dev**")
+    st.info(f"Worker akan di-deploy ke: **https://{st.session_state.worker_subdomain}**")
     
     # Preview posts
     if st.session_state.posts:
@@ -467,7 +477,7 @@ def deploy_page():
                 if deploy_worker(worker_script):
                     st.success("✅ Worker berhasil di-deploy!")
                     st.balloons()
-                    st.markdown(f"🌍 Blog Anda live di: https://{st.session_state.worker_subdomain}.workers.dev")
+                    st.markdown(f"🌍 Blog Anda live di: https://{st.session_state.worker_subdomain}")
                 else:
                     st.error("❌ Deploy gagal! Periksa konfigurasi Cloudflare.")
     else:
@@ -482,13 +492,28 @@ def settings_page():
         
         new_account_id = st.text_input("Account ID:", value=st.session_state.cf_account_id)
         new_api_token = st.text_input("API Token:", value=st.session_state.cf_api_token, type="password")
-        new_subdomain = st.text_input("Subdomain Worker:", value=st.session_state.worker_subdomain)
+        new_worker_name = st.text_input("Worker Name:", value=st.session_state.worker_name)
         
         if st.form_submit_button("💾 Update Konfigurasi"):
-            st.session_state.cf_account_id = new_account_id
-            st.session_state.cf_api_token = new_api_token
-            st.session_state.worker_subdomain = new_subdomain
-            st.success("✅ Konfigurasi berhasil diupdate!")
+            if new_account_id and new_api_token and new_worker_name:
+                if test_cloudflare_connection(new_account_id, new_api_token):
+                    account_name = get_account_name(new_account_id, new_api_token)
+                    if account_name:
+                        account_subdomain = account_name.replace(' ', '').replace('-', '').lower()
+                        full_worker_url = f"{new_worker_name}.{account_subdomain}.workers.dev"
+                        
+                        st.session_state.cf_account_id = new_account_id
+                        st.session_state.cf_api_token = new_api_token
+                        st.session_state.worker_name = new_worker_name
+                        st.session_state.worker_subdomain = full_worker_url
+                        st.session_state.account_name = account_name
+                        st.success("✅ Konfigurasi berhasil diupdate!")
+                    else:
+                        st.error("❌ Gagal mengambil nama akun.")
+                else:
+                    st.error("❌ Koneksi ke Cloudflare gagal.")
+            else:
+                st.error("❌ Semua field harus diisi!")
     
     st.markdown("---")
     
