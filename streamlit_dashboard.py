@@ -83,6 +83,37 @@ def get_account_name(account_id, api_token):
     except Exception as e:
         return None
 
+def format_account_name(account_name):
+    """Format nama akun untuk subdomain yang valid"""
+    if not account_name:
+        return None
+    
+    # Hapus karakter yang tidak valid untuk subdomain
+    # Hanya izinkan huruf, angka, dan dash
+    import re
+    
+    # Ambil bagian sebelum @ jika ada email
+    if '@' in account_name:
+        account_name = account_name.split('@')[0]
+    
+    # Hapus 'saccount atau karakter serupa
+    account_name = re.sub(r"'s?account", "", account_name, flags=re.IGNORECASE)
+    
+    # Ganti karakter tidak valid dengan dash atau hapus
+    account_name = re.sub(r'[^a-zA-Z0-9-]', '', account_name)
+    
+    # Hapus dash berturut-turut dan di awal/akhir
+    account_name = re.sub(r'-+', '-', account_name).strip('-')
+    
+    # Konversi ke lowercase
+    account_name = account_name.lower()
+    
+    # Pastikan tidak kosong dan tidak terlalu panjang
+    if not account_name or len(account_name) < 1:
+        return "user"
+    
+    # Batasi panjang maksimal 63 karakter (standar DNS)
+    return account_name[:63]
 def authenticate():
     """Authentication form"""
     st.markdown('<div class="main-header"><h1>🚀 Blog Management System</h1><p>Kelola blog Cloudflare Worker Anda dengan mudah</p></div>', unsafe_allow_html=True)
@@ -118,7 +149,7 @@ def authenticate():
                     if account_name:
                         # Format: <WORKER_NAME>.<ACCOUNT_NAME>.workers.dev
                         worker_name = subdomain
-                        account_subdomain = account_name.replace(' ', '').replace('-', '').lower()
+                        account_subdomain = format_account_name(account_name)
                         full_worker_url = f"{worker_name}.{account_subdomain}.workers.dev"
                         
                         st.session_state.cf_account_id = account_id
@@ -499,7 +530,7 @@ def settings_page():
                 if test_cloudflare_connection(new_account_id, new_api_token):
                     account_name = get_account_name(new_account_id, new_api_token)
                     if account_name:
-                        account_subdomain = account_name.replace(' ', '').replace('-', '').lower()
+                        account_subdomain = format_account_name(account_name)
                         full_worker_url = f"{new_worker_name}.{account_subdomain}.workers.dev"
                         
                         st.session_state.cf_account_id = new_account_id
