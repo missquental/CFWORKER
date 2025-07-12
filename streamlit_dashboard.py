@@ -414,7 +414,13 @@ def main_dashboard():
         page = st.selectbox("Pilih Halaman:", ["📋 Kelola Post", "🚀 Deploy", "⚙️ Settings"])
         
         st.markdown("---")
-        st.markdown(f"**Worker URL:**  \n`https://{st.session_state.worker_subdomain}`")
+        # Format ulang URL untuk display yang benar
+        if 'worker_name' in st.session_state and 'account_name' in st.session_state:
+            clean_account = format_account_name(st.session_state.account_name)
+            display_url = f"{st.session_state.worker_name}.{clean_account}.workers.dev"
+            st.markdown(f"**Worker URL:**  \n`https://{display_url}`")
+        else:
+            st.markdown(f"**Worker URL:**  \n`https://{st.session_state.worker_subdomain}`")
         st.markdown(f"**Account:** {st.session_state.account_name}")
         st.markdown(f"**Worker Name:** {st.session_state.worker_name}")
         
