@@ -59,7 +59,7 @@ def init_session_state():
         st.session_state.cf_account_id = ""
     if 'cf_api_token' not in st.session_state:
         st.session_state.cf_api_token = ""
-    if 'worker_subdomain' not in st.session_state:
+    if 'worker_name' not in st.session_state:
         st.session_state.worker_name = ""
     if 'worker_url' not in st.session_state:
         st.session_state.worker_url = ""
@@ -542,8 +542,9 @@ def deploy_page():
                         account_info = get_account_info()
                         if account_info:
                             subdomain = account_info.get('subdomain', st.session_state.cf_account_id[:8])
-                            worker_url = f"https://{st.session_state.worker_name}.{subdomain}.workers.dev"
-                            st.markdown(f"🌍 Blog Anda live di: {worker_url}")
+                            if st.session_state.worker_name:
+                                worker_url = f"https://{st.session_state.worker_name}.{subdomain}.workers.dev"
+                                st.markdown(f"🌍 Blog Anda live di: {worker_url}")
                 else:
                     st.error("❌ Deploy gagal! Periksa konfigurasi Cloudflare.")
     else:
