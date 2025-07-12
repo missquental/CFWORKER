@@ -59,10 +59,8 @@ def init_session_state():
         st.session_state.cf_account_id = ""
     if 'cf_api_token' not in st.session_state:
         st.session_state.cf_api_token = ""
-    if 'worker_name' not in st.session_state:
-        st.session_state.worker_name = ""
-    if 'worker_url' not in st.session_state:
-        st.session_state.worker_url = ""
+    if 'worker_subdomain' not in st.session_state:
+        st.session_state.worker_subdomain = ""
 
 def authenticate():
     """Authentication form"""
@@ -85,9 +83,9 @@ def authenticate():
         )
         
         subdomain = st.text_input(
-            "Nama Worker:",
-            placeholder="testaja",
-            help="Worker akan di-deploy ke [nama].[account-id].workers.dev"
+            "Subdomain Worker:",
+            placeholder="blog-namaid",
+            help="Worker akan di-deploy ke [subdomain].workers.dev"
         )
         
         submit = st.form_submit_button("🔗 Connect", use_container_width=True)
@@ -98,7 +96,7 @@ def authenticate():
                 if test_cloudflare_connection(account_id, api_token):
                     st.session_state.cf_account_id = account_id
                     st.session_state.cf_api_token = api_token
-                    st.session_state.worker_name = subdomain
+                    st.session_state.worker_subdomain = subdomain
                     st.session_state.authenticated = True
                     st.rerun()
                 else:
@@ -121,113 +119,38 @@ def test_cloudflare_connection(account_id, api_token):
 def deploy_worker(script_content):
     """Deploy worker to Cloudflare"""
     try:
-        # Dapatkan account info untuk subdomain
-        account_info = get_account_info()
-        if not account_info:
-            st.error("❌ Gagal mendapatkan informasi account!")
-            return False
-            
-        account_subdomain = account_info.get('subdomain', st.session_state.cf_account_id[:8])
-        worker_url = f"https://{st.session_state.worker_name}.{account_subdomain}.workers.dev"
-        st.session_state.worker_url = worker_url
-        
         headers = {
             "Authorization": f"Bearer {st.session_state.cf_api_token}",
             "Content-Type": "application/javascript"
         }
         
-        # Deploy script
-        url = f"https://api.cloudflare.com/client/v4/accounts/{st.session_state.cf_account_id}/workers/scripts/{st.session_state.worker_name}"
+        url = f"https://api.cloudflare.com/client/v4/accounts/{st.session_state.cf_account_id}/workers/scripts/{st.session_state.worker_subdomain}"
         
         response = requests.put(url, headers=headers, data=script_content)
         
         if response.status_code == 200:
-            # Setup custom domain/route jika diperlukan
-            setup_worker_route()
+            # Deploy ke subdomain
+            subdomain_url = f"https://api.cloudflare.com/client/v4/accounts/{st.session_state.cf_account_id}/workers/scripts/{st.session_state.worker_subdomain}/subdomain"
+            subdomain_data = {"enabled": True}
+            
+            subdomain_headers = {
+                "Authorization": f"Bearer {st.session_state.cf_api_token}",
+                "Content-Type": "application/json"
+            }
+            
+            requests.post(subdomain_url, headers=subdomain_headers, json=subdomain_data)
             return True
-        else:
-            st.error(f"❌ Deploy gagal: {response.text}")
-            return False
+        return False
     except Exception as e:
         st.error(f"Error deploying worker: {str(e)}")
         return False
 
-def get_account_info():
-    """Dapatkan informasi account Cloudflare"""
-    try:
-        headers = {
-            "Authorization": f"Bearer {st.session_state.cf_api_token}",
-            "Content-Type": "application/json"
-        }
-        response = requests.get(f"https://api.cloudflare.com/client/v4/accounts/{st.session_state.cf_account_id}", headers=headers)
-        if response.status_code == 200:
-            return response.json().get('result', {})
-        return None
-    except:
-        return None
-
-def setup_worker_route():
-    """Setup routing untuk worker"""
-    try:
-        headers = {
-            "Authorization": f"Bearer {st.session_state.cf_api_token}",
-            "Content-Type": "application/json"
-        }
-        
-        # Enable subdomain untuk worker
-        subdomain_url = f"https://api.cloudflare.com/client/v4/accounts/{st.session_state.cf_account_id}/workers/scripts/{st.session_state.worker_name}/subdomain"
-        subdomain_data = {"enabled": True}
-        
-        requests.post(subdomain_url, headers=headers, json=subdomain_data)
-        
-        # Setup custom domain jika ada
-        setup_custom_domain()
-        
-    except Exception as e:
-        # Tidak masalah jika custom domain gagal
-        pass
-
-def setup_custom_domain():
-    """Setup custom domain untuk worker (opsional)"""
-    try:
-        # Cek apakah ada domain yang bisa digunakan
-        headers = {
-            "Authorization": f"Bearer {st.session_state.cf_api_token}",
-            "Content-Type": "application/json"
-        }
-        
-        # List zones/domains
-        zones_response = requests.get(f"https://api.cloudflare.com/client/v4/zones", headers=headers)
-        if zones_response.status_code == 200:
-            zones = zones_response.json().get('result', [])
-            if zones:
-                # Gunakan domain pertama yang tersedia
-                zone = zones[0]
-                zone_id = zone['id']
-                domain = zone['name']
-                
-                # Setup worker route
-                route_data = {
-                    "pattern": f"blog.{domain}/*",
-                    "script": st.session_state.worker_name
-                }
-                
-                route_url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/workers/routes"
-                route_response = requests.post(route_url, headers=headers, json=route_data)
-                
-                if route_response.status_code == 200:
-                    custom_url = f"https://blog.{domain}"
-                    st.session_state.worker_url = custom_url
-                    st.success(f"✅ Custom domain setup: {custom_url}")
-            
-    except Exception as e:
-        # Tidak masalah jika custom domain gagal
-        pass
 def generate_worker_script():
     """Generate worker script dengan posts dari session state"""
     posts_json = json.dumps(st.session_state.posts, indent=2)
     
-    worker_script = f"""// Blog Worker untuk Cloudflare
+    return f"""
+// Blog Worker untuk Cloudflare
 addEventListener('fetch', event => {{
   event.respondWith(handleRequest(event.request))
 }})
@@ -416,8 +339,6 @@ function getPostPage(postId) {{
   return HTML_TEMPLATE.replace('{{title}}', post.title).replace('{{content}}', content);
 }}
 """
-    
-    return worker_script
 
 def main_dashboard():
     """Main dashboard interface"""
@@ -429,14 +350,7 @@ def main_dashboard():
         page = st.selectbox("Pilih Halaman:", ["📋 Kelola Post", "🚀 Deploy", "⚙️ Settings"])
         
         st.markdown("---")
-        if st.session_state.worker_url:
-            st.markdown(f"**Worker URL:**  \n{st.session_state.worker_url}")
-        else:
-            account_info = get_account_info()
-            if account_info:
-                subdomain = account_info.get('subdomain', st.session_state.cf_account_id[:8])
-                estimated_url = f"{st.session_state.worker_name}.{subdomain}.workers.dev"
-                st.markdown(f"**Estimated URL:**  \n`{estimated_url}`")
+        st.markdown(f"**Worker URL:**  \n`{st.session_state.worker_subdomain}.workers.dev`")
         
         if st.button("🔓 Logout"):
             st.session_state.authenticated = False
@@ -511,15 +425,7 @@ def deploy_page():
     """Halaman untuk deploy worker"""
     st.header("🚀 Deploy Blog")
     
-    # Tampilkan URL target
-    if st.session_state.worker_url:
-        st.info(f"Worker akan di-deploy ke: **{st.session_state.worker_url}**")
-    else:
-        account_info = get_account_info()
-        if account_info:
-            subdomain = account_info.get('subdomain', st.session_state.cf_account_id[:8])
-            estimated_url = f"{st.session_state.worker_name}.{subdomain}.workers.dev"
-            st.info(f"Worker akan di-deploy ke: **{estimated_url}**")
+    st.info(f"Worker akan di-deploy ke: **{st.session_state.worker_subdomain}.workers.dev**")
     
     # Preview posts
     if st.session_state.posts:
@@ -536,15 +442,7 @@ def deploy_page():
                 if deploy_worker(worker_script):
                     st.success("✅ Worker berhasil di-deploy!")
                     st.balloons()
-                    if st.session_state.worker_url:
-                        st.markdown(f"🌍 Blog Anda live di: {st.session_state.worker_url}")
-                    else:
-                        account_info = get_account_info()
-                        if account_info:
-                            subdomain = account_info.get('subdomain', st.session_state.cf_account_id[:8])
-                            if st.session_state.worker_name:
-                                worker_url = f"https://{st.session_state.worker_name}.{subdomain}.workers.dev"
-                                st.markdown(f"🌍 Blog Anda live di: {worker_url}")
+                    st.markdown(f"🌍 Blog Anda live di: https://{st.session_state.worker_subdomain}.workers.dev")
                 else:
                     st.error("❌ Deploy gagal! Periksa konfigurasi Cloudflare.")
     else:
@@ -559,12 +457,12 @@ def settings_page():
         
         new_account_id = st.text_input("Account ID:", value=st.session_state.cf_account_id)
         new_api_token = st.text_input("API Token:", value=st.session_state.cf_api_token, type="password")
-        new_worker_name = st.text_input("Nama Worker:", value=st.session_state.worker_name)
+        new_subdomain = st.text_input("Subdomain Worker:", value=st.session_state.worker_subdomain)
         
         if st.form_submit_button("💾 Update Konfigurasi"):
             st.session_state.cf_account_id = new_account_id
             st.session_state.cf_api_token = new_api_token
-            st.session_state.worker_name = new_worker_name
+            st.session_state.worker_subdomain = new_subdomain
             st.success("✅ Konfigurasi berhasil diupdate!")
     
     st.markdown("---")
