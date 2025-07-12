@@ -1,0 +1,23 @@
+{
+  "name": "blog-cloudflare-worker",
+  "version": "1.0.0",
+  "description": "Blog system using Cloudflare Worker and Streamlit dashboard",
+  "main": "worker.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler publish",
+    "streamlit": "streamlit run streamlit_dashboard.py"
+  },
+  "keywords": [
+    "cloudflare",
+    "worker", 
+    "blog",
+    "streamlit",
+    "serverless"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
