@@ -184,7 +184,8 @@ def setup_worker_route():
         setup_custom_domain()
         
     except Exception as e:
-        st.warning(f"Warning setup route: {str(e)}")
+        # Tidak masalah jika custom domain gagal
+        pass
 
 def setup_custom_domain():
     """Setup custom domain untuk worker (opsional)"""
@@ -225,8 +226,7 @@ def generate_worker_script():
     """Generate worker script dengan posts dari session state"""
     posts_json = json.dumps(st.session_state.posts, indent=2)
     
-    return f"""
-// Blog Worker untuk Cloudflare
+    worker_script = f"""// Blog Worker untuk Cloudflare
 addEventListener('fetch', event => {{
   event.respondWith(handleRequest(event.request))
 }})
@@ -415,6 +415,8 @@ function getPostPage(postId) {{
   return HTML_TEMPLATE.replace('{{title}}', post.title).replace('{{content}}', content);
 }}
 """
+    
+    return worker_script
 
 def main_dashboard():
     """Main dashboard interface"""
